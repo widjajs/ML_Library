@@ -34,7 +34,8 @@ void *arena_push(Arena *arena, u64 size, b32 zero) {
         // round new commit size up to page size
         u64 new_commited = new_pos;
         new_commited += arena->commit_size - 1;
-        new_commited -= new_commited % ARENA_ALIGN;
+        new_commited -= new_commited % arena->commit_size;
+        new_commited = MIN(new_commited, arena->reserve_size);
 
         u8 *ptr = (u8 *)arena + arena->commited;
         u64 commit_size = new_commited - arena->commited;
@@ -95,8 +96,7 @@ b32 mem_commit(void *ptr, u64 size) {
 
 b32 mem_decommit(void *ptr, u64 size) {
     // prevent accidentally touching decommited area
-    if (mprotect(ptr, size, PROT_NONE) != 0) return false;
-    return madvise(ptr, size, MADV_DONTNEED) != 0;
+    return mprotect(ptr, size, PROT_NONE) == 0 && madvise(ptr, size, MADV_DONTNEED) == 0;
 } /* mem_commit() */
 
 b32 mem_release(void *ptr, u64 size) {
