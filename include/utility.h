@@ -30,5 +30,6 @@ typedef double f64;
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define ALIGN_UP2(n, p) (((u64)(n) + ((u64)(p) - 1)) & (~((u64)(p) - 1)))
 #define ALIGN_DOWN2(n, p) (((u64)(n)) & (~((u64)(p) - 1)))
+#define M_PI 3.14159265358979323846
 
 #endif

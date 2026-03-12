@@ -1,4 +1,5 @@
-#include "arena.h"
+#define _GNU_SOURCE
+#include "./include/arena.h"
 
 #include <assert.h>
 #include <stdlib.h>
