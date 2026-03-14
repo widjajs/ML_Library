@@ -53,6 +53,35 @@ u32 read_images(FILE *fp, u8 *images, u64 size) {
     return SUCCESS;
 } /* read_images() */
 
+/* Fisher-Yates shuffling algorithm */
+void data_shuffle(u64 *indices, u64 n) {
+    u64 k, temp;
+    for (u64 i = n - 1; i > 0; i--) {
+        // rand num [0, n]
+        k = next() % (i + 1);
+
+        temp = indices[i];
+        indices[i] = indices[k];
+        indices[k] = temp;
+    }
+}
+
+void data_load_batch(u64 *indices, Matrix *x_out, u8 *y_out, const u8 *labels,
+                     const u8 *pixels, const u64 start, const u64 batch_size) {
+    for (u64 i = 0; i < batch_size; i++) {
+        u64 idx = indices[i] * 784;
+        for (u64 j = 0; j < 784; j++) {
+            // copy image pixels
+            *MAT_AT(x_out, i, j) = pixels[idx + j] / 255.0;
+        }
+    }
+
+    for (u64 i = 0; i < batch_size; i++) {
+        // copy answers
+        y_out[i] = labels[indices[i + start]];
+    }
+}
+
 void draw_mnist_ascii(u8 *image) {
     // don't ask how this works
     char *chars = " .:-=+*#%@"; // darker pixels = denser characters
@@ -78,4 +107,3 @@ void draw_mnist_color(u8 *image) {
     }
     printf("\x1b[0m");
 } /* draw_mnist_color() */
-// TODO: put training image data into matrices, start working on numc
