@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <assert.h>
 #include <math.h>
 #include <time.h>
 #include <unistd.h>
@@ -38,19 +39,35 @@ int main() {
 
     // fclose(fp_images);
     // fclose(fp_labels);
+    Matrix *a4 = mat_init(arena, 3, 2, true);
+    Matrix *b4 = mat_init(arena, 2, 3, true);
+    Matrix *dest4 = mat_init(arena, 2, 2, true);
 
-    Matrix *mat = init_mat(arena, 7, 3, true);
-    Matrix *mat2 = init_mat(arena, 7, 3, true);
-    // Matrix *res = init_mat(arena, 7, 3, true);
-    rng_seed((u64)time(NULL));
-    mat_fill_rand(mat, sqrt(2.0 / mat->cols));
-    mat_fill_rand(mat2, sqrt(2.0 / mat->cols));
+    *MAT_AT(a4, 0, 0) = 1;
+    *MAT_AT(a4, 0, 1) = 4;
+    *MAT_AT(a4, 1, 0) = 2;
+    *MAT_AT(a4, 1, 1) = 5;
+    *MAT_AT(a4, 2, 0) = 3;
+    *MAT_AT(a4, 2, 1) = 6;
 
-    mat_print(mat, "a");
-    mat_print(mat2, "b");
+    *MAT_AT(b4, 0, 0) = 1;
+    *MAT_AT(b4, 0, 1) = 2;
+    *MAT_AT(b4, 0, 2) = 3;
+    *MAT_AT(b4, 1, 0) = 4;
+    *MAT_AT(b4, 1, 1) = 5;
+    *MAT_AT(b4, 1, 2) = 6;
 
-    mat_add(mat, mat, mat2);
-    mat_print(mat, "a");
+    // A^T * B^T = (B*A)^T
+    // B*A = [[1,2,3],[4,5,6]] * [[1,4],[2,5],[3,6]] = [[14,32],[32,77]]
+    // (B*A)^T = [[14,32],[32,77]] (symmetric in this case)
+    mat_mul_transpose(dest4, a4, b4, true, true);
+    mat_print(dest4, "Test4: A^T * B^T (expect [[14,32],[32,77]])");
+
+    Matrix *c = mat_copy(arena, dest4);
+    mat_print(c, "copied");
+
+    Matrix view = mat_row(c, 0);
+    mat_print(&view, "view");
 
     arena_delete(arena);
 

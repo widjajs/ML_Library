@@ -2,7 +2,7 @@
 #include "./include/prng.h"
 
 // allocation & init
-Matrix *init_mat(Arena *arena, const u64 rows, const u64 cols, const bool zeroed) {
+Matrix *mat_init(Arena *arena, const u64 rows, const u64 cols, const bool zeroed) {
     if (!arena) return NULL;
 
     Matrix *mat = arena_push(arena, sizeof(Matrix), false);
@@ -37,7 +37,7 @@ void mat_fill_rand(Matrix *a, const f64 scale) {
 // matrix arithmetic operations
 void mat_add(Matrix *dest, const Matrix *a, const Matrix *b) {
     if (a->rows != b->rows || a->cols != b->cols) {
-        perror("Matrix Addition Error: incompatible sizes");
+        fprintf(stderr, "Matrix Addition Error: Incompatible Sizes");
         return;
     }
 
@@ -47,9 +47,10 @@ void mat_add(Matrix *dest, const Matrix *a, const Matrix *b) {
         }
     }
 }
+
 void mat_sub(Matrix *dest, const Matrix *a, const Matrix *b) {
     if (a->rows != b->rows || a->cols != b->cols) {
-        perror("Matrix Subtraction Error: incompatible sizes");
+        fprintf(stderr, "Matrix Subtraction Error: Incompatible Sizes\n");
         return;
     }
 
@@ -59,7 +60,37 @@ void mat_sub(Matrix *dest, const Matrix *a, const Matrix *b) {
         }
     }
 }
-void mat_mul(Matrix *dest, const Matrix *a, const Matrix *b);
+
+void mat_mul(Matrix *dest, const Matrix *a, const Matrix *b) {
+    for (u64 row = 0; row < dest->rows; row++) {
+        for (u64 i = 0; i < a->cols; i++) { // take advantage of caching
+            f64 a_val = *MAT_AT(a, row, i);
+            for (u64 col = 0; col < dest->cols; col++) {
+                *MAT_AT(dest, row, col) += a_val * (*MAT_AT(b, i, col));
+            }
+        }
+    }
+}
+
+void mat_mul_transpose(Matrix *dest, Matrix *a, Matrix *b, b32 a_transp, b32 b_transp) {
+    u64 a_rows = a_transp ? a->cols : a->rows;
+    u64 a_cols = a_transp ? a->rows : a->cols;
+    // u64 b_rows = b_transp ? b->cols : b->rows;
+    u64 b_cols = b_transp ? b->rows : b->cols;
+
+    mat_fill(dest, 0);
+
+    for (u64 row = 0; row < a_rows; row++) {
+        for (u64 col = 0; col < b_cols; col++) {
+            for (u64 i = 0; i < a_cols; i++) {
+                f64 a_val = a_transp ? (*MAT_AT(a, i, row)) : (*MAT_AT(a, row, i));
+                f64 b_val = b_transp ? (*MAT_AT(b, col, i)) : (*MAT_AT(b, i, col));
+                *MAT_AT(dest, row, col) += a_val * b_val;
+            }
+        }
+    }
+}
+
 void mat_scale(Matrix *dest, const Matrix *a, const f64 scalar) {
     for (u64 row = 0; row < a->rows; row++) {
         for (u64 col = 0; col < a->cols; col++) {
@@ -67,12 +98,51 @@ void mat_scale(Matrix *dest, const Matrix *a, const f64 scalar) {
         }
     }
 }
-void mat_add_vec(Matrix *dest, const Matrix *a, const Matrix *bias);
+
+void mat_add_vec(Matrix *dest, const Matrix *a, const Matrix *bias) {
+    if (a->cols != bias->cols || dest->cols != a->cols || dest->rows != a->rows) {
+        fprintf(stderr, "Matrix Add Vector Error: Incompatible Sizes\n");
+    }
+
+    for (u64 row = 0; row < dest->rows; row++) {
+        for (u64 col = 0; col < dest->cols; col++) {
+            *MAT_AT(dest, row, col) += *MAT_AT(bias, 0, col);
+        }
+    }
+}
 
 // shape operations
-Matrix mat_transpose(const Matrix *a);
-Matrix mat_copy(Arena *arena, const Matrix *a);
-Matrix mat_row(const Matrix *a, u64 const row);
+Matrix *mat_transpose(Arena *arena, const Matrix *a) {
+    if (!a) {
+        fprintf(stderr, "Matrix Transpose Error: NULL Matrix Passed In");
+        return NULL;
+    }
+
+    Matrix *new_mat = mat_init(arena, a->cols, a->rows, true);
+    if (!new_mat) return NULL;
+
+    for (u64 row = 0; row < new_mat->rows; row++) {
+        for (u64 col = 0; col < new_mat->cols; col++) {
+            *MAT_AT(new_mat, row, col) = *MAT_AT(a, col, row);
+        }
+    }
+    return new_mat;
+}
+
+Matrix *mat_copy(Arena *arena, const Matrix *a) {
+    Matrix *copy = mat_init(arena, a->rows, a->cols, true);
+    if (!copy) return NULL;
+
+    copy->rows = a->rows;
+    copy->cols = a->cols;
+    memcpy(copy->data, a->data, a->rows * a->cols * sizeof(*a->data));
+
+    return copy;
+}
+
+Matrix mat_row(const Matrix *a, u64 const row) {
+    return (Matrix){.rows = 1, .cols = a->cols, .data = &a->data[row * a->cols]};
+}
 
 // activation functions
 void mat_relu(Matrix *dest, const Matrix *a);
