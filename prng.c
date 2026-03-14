@@ -57,6 +57,7 @@ uint64_t splitmix64(void) {
 
 // Initialize xoshiro256++ state from a single 64-bit seed using splitmix64
 void rng_seed(uint64_t seed) {
+    // rng_seed(time(NULL));
     splitmix_state = seed;
     s[0] = splitmix64();
     s[1] = splitmix64();

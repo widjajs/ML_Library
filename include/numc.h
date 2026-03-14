@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "arena.h"
+#include "utility.h"
 
 typedef struct {
     u64 rows;
@@ -36,10 +37,11 @@ Matrix mat_row(const Matrix *a, u64 const row);
 void mat_relu(Matrix *dest, const Matrix *a);
 void mat_relu_backward(Matrix *dest, const Matrix *gradient, const Matrix *forward);
 void mat_softmax(Matrix *dest, const Matrix *a);
+Matrix *mat_one_hot(Arena *arena, const u8 *labels, const u64 n, const u64 num_classes);
 
 // reduction/loss
-f64 mat_cross_entropy(const Matrix *probs, const u8 *labels, const u64 n);
-void mat_softmax_grad(Matrix *dest, const Matrix *probs, const u8 *labels, const u64 n);
+f64 mat_cross_entropy(Arena *arena, const Matrix *probs, const u8 *labels);
+void mat_softmax_grad(Arena *arena, Matrix *dest, const Matrix *probs, const u8 *labels);
 
 // debug
 void mat_print(Matrix *a, const char *name);

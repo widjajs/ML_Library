@@ -1,5 +1,7 @@
 #include "./include/numc.h"
 #include "./include/prng.h"
+#include "include/arena.h"
+#include "include/utility.h"
 
 // allocation & init
 Matrix *mat_init(Arena *arena, const u64 rows, const u64 cols, const bool zeroed) {
@@ -133,8 +135,6 @@ Matrix *mat_copy(Arena *arena, const Matrix *a) {
     Matrix *copy = mat_init(arena, a->rows, a->cols, true);
     if (!copy) return NULL;
 
-    copy->rows = a->rows;
-    copy->cols = a->cols;
     memcpy(copy->data, a->data, a->rows * a->cols * sizeof(*a->data));
 
     return copy;
@@ -145,13 +145,86 @@ Matrix mat_row(const Matrix *a, u64 const row) {
 }
 
 // activation functions
-void mat_relu(Matrix *dest, const Matrix *a);
-void mat_relu_backward(Matrix *dest, const Matrix *gradient, const Matrix *forward);
-void mat_softmax(Matrix *dest, const Matrix *a);
+void mat_relu(Matrix *dest, const Matrix *a) {
+    for (u64 row = 0; row < a->rows; row++) {
+        for (u64 col = 0; col < a->cols; col++) {
+            *MAT_AT(dest, row, col) = MAX(0, *MAT_AT(a, row, col));
+        }
+    }
+}
+
+void mat_relu_backward(Matrix *dest, const Matrix *grad, const Matrix *forward) {
+    for (u64 row = 0; row < grad->rows; row++) {
+        for (u64 col = 0; col < grad->cols; col++) {
+            *MAT_AT(dest, row, col) =
+                *MAT_AT(grad, row, col) * (*MAT_AT(forward, row, col) > 0);
+        }
+    }
+}
+
+void mat_softmax(Matrix *dest, const Matrix *a) {
+    // find max
+    f64 max = *MAT_AT(a, 0, 0);
+    for (u64 row = 0; row < a->rows; row++) {
+        for (u64 col = 0; col < a->cols; col++) {
+            f64 val = *MAT_AT(a, row, col);
+            max = MAX(max, val);
+        }
+    }
+
+    // exponentiate everything and subtract max to avoid overflow
+    f64 sum = 0.0;
+    for (u64 row = 0; row < a->rows; row++) {
+        for (u64 col = 0; col < a->cols; col++) {
+            f64 exponentiated = exp(*MAT_AT(a, row, col) - max);
+            *MAT_AT(dest, row, col) = exponentiated;
+            sum += exponentiated;
+        }
+    }
+
+    // normalize
+    for (u64 row = 0; row < a->rows; row++) {
+        for (u64 col = 0; col < a->cols; col++) {
+            *MAT_AT(dest, row, col) /= sum;
+        }
+    }
+}
+
+Matrix *mat_one_hot(Arena *arena, const u8 *labels, const u64 n, const u64 num_classes) {
+    Matrix *one_hot = mat_init(arena, n, num_classes, 0); // n x num_classes
+    for (u64 i = 0; i < n; i++) {
+        *MAT_AT(one_hot, i, labels[i]) = 1;
+    }
+    return one_hot;
+}
 
 // reduction/loss
-f64 mat_cross_entropy(const Matrix *probs, const u8 *labels, const u64 n);
-void mat_softmax_grad(Matrix *dest, const Matrix *probs, const u8 *labels, const u64 n);
+f64 mat_cross_entropy(Arena *arena, const Matrix *probs, const u8 *labels) {
+    // not used in training pipeline; just a good inidicator for printing progress
+    ArenaTemp temp = arena_temp_begin(arena);
+    Matrix *one_hot = mat_one_hot(temp.arena, labels, probs->rows, probs->cols);
+    f64 res = 0.0;
+    for (u64 row = 0; row < probs->rows; row++) {
+        for (u64 col = 0; col < probs->cols; col++) {
+            res += *MAT_AT(one_hot, row, col) * log(*MAT_AT(probs, row, col));
+        }
+    }
+    arena_temp_end(&temp);
+    return -res / probs->rows;
+}
+
+void mat_softmax_grad(Arena *arena, Matrix *dest, const Matrix *probs, const u8 *labels) {
+    ArenaTemp temp = arena_temp_begin(arena);
+    Matrix *one_hot = mat_one_hot(temp.arena, labels, probs->rows, probs->cols);
+    for (u64 row = 0; row < probs->rows; row++) {
+        for (u64 col = 0; col < probs->cols; col++) {
+            // predicted (probs) - actual (one_hot labels)
+            *MAT_AT(dest, row, col) =
+                (*MAT_AT(probs, row, col) - *MAT_AT(one_hot, row, col)) / probs->rows;
+        }
+    }
+    arena_temp_end(&temp);
+}
 
 // debug
 void mat_print(Matrix *a, const char *name) {
