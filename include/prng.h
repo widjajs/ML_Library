@@ -3,8 +3,6 @@
 
 #include "utility.h"
 
-#include <math.h>
-
 /*  xoshiro256++ 1.0 and splitmix64
  *
  *  Written in 2018–2019 by David Blackman and Sebastiano Vigna (vigna@acm.org)

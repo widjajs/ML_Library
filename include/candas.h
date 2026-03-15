@@ -2,8 +2,9 @@
 #define CANDAS_H
 
 #include "numc.h"
-#include "prng.h"
 #include "utility.h"
+
+#include <stdio.h>
 
 #define FILE_ERR (-1)
 #define READ_ERR (-2)

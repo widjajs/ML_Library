@@ -1,8 +1,6 @@
 #ifndef NUMC
 #define NUMC
 
-#include <string.h>
-
 #include "arena.h"
 #include "utility.h"
 
@@ -16,7 +14,7 @@ typedef struct {
 #define MAT_AT(mat, row, col) (&((mat)->data[(row) * (mat)->cols + (col)]))
 
 // allocation & init
-Matrix *mat_init(Arena *arena, const u64 rows, const u64 cols, const bool zeroed);
+Matrix *mat_init(Arena *arena, const u64 rows, const u64 cols, const b32 zeroed);
 void mat_fill(Matrix *a, const f64 val);
 void mat_fill_rand(Matrix *a, const f64 scale);
 

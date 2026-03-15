@@ -1,4 +1,5 @@
 #include "./include/candas.h"
+#include "./include/prng.h"
 
 u32 swap_endian(u32 x) {
     return ((x >> 24) & (0x000000FF)) | ((x >> 8) & (0x0000FF00)) |

@@ -167,6 +167,12 @@ Minimal arena-allocated matrix library for neural networks. All operations are i
 - Initializes weights randomly (Xavier/Glorot), biases to zero
 - Returns allocated model or `NULL` on allocation failure
 
+### `NNLayer *NN_init_layer(Arena *arena, u64 out_features, u64 in_features)`
+
+- Allocates NNLayer with W[out_features × in_features], b[out_features × 1]
+- Weights: Xavier init randn() * sqrt(2/(in_features + out_features))
+- Biases: zeros
+
 ## Forward Pass
 
 ### `void NN_forward(NNModel *model, Matrix *input, Matrix *output, NNCache *cache)`

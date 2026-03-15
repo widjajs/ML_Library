@@ -1,10 +1,15 @@
 #include "./include/numc.h"
+#include "./include/arena.h"
 #include "./include/prng.h"
-#include "include/arena.h"
-#include "include/utility.h"
+#include "./include/utility.h"
+
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
 
 // allocation & init
-Matrix *mat_init(Arena *arena, const u64 rows, const u64 cols, const bool zeroed) {
+Matrix *mat_init(Arena *arena, const u64 rows, const u64 cols, const b32 zeroed) {
     if (!arena) return NULL;
 
     Matrix *mat = arena_push(arena, sizeof(Matrix), false);
