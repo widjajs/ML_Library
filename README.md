@@ -1,129 +1,236 @@
-# numc — Matrix Library Reference
+# NumC Matrix Library Specifications
 
-A minimal matrix library for neural network development in C, built on top of an arena allocator.
-All matrix data is arena-allocated. There are no individual free functions — lifetime is managed
-entirely by the arena.
+Minimal arena-allocated matrix library for neural networks. All operations are in-place where possible. Assumes row-major storage with `MAT_AT(mat, row, col)` macro.
 
----
+## Allocation & Initialization
 
-## Matrix Struct
+### `Matrix *mat_init(Arena *arena, const u64 rows, const u64 cols, const bool zeroed)`
 
-The core `Matrix` type stores a pointer to arena-allocated float data alongside its dimensions.
-All functions operate on this struct passed by value. The `data` pointer always points into an
-arena — never call `free()` on it directly.
+- Allocates `Matrix` struct + data array on arena
+- `zeroed=true`: initializes data to 0.0
+- Shape: `rows × cols`, returns `NULL` on failure
 
----
+### `void mat_fill(Matrix *a, const f64 val)`
 
-## Allocation
+- Fills entire matrix with constant `val`
+- In-place modification
 
-### `init_mat`
-Allocates a matrix of the given dimensions on the provided arena. If `zeroed` is true, all
-elements are initialized to 0.0. Otherwise the memory is uninitialized. The returned `Matrix`
-struct is passed by value; only the internal `data` array lives in the arena.
+### `void mat_fill_rand(Matrix *a, const f64 scale)`
 
----
+- Fills with `randn() * scale` (Gaussian noise)
+- Xavier/Glorot scaling support via `scale = sqrt(2/(fan_in + fan_out))`
 
-## Indexing
+## Arithmetic Operations
 
-### `MAT_AT(mat, row, col)`
-Macro that returns a `float *` pointer to the element at `[row][col]` using row-major indexing.
-Can be used for both reads and writes via dereference.
+### `void mat_add(Matrix *dest, const Matrix *a, const Matrix *b)`
 
----
+- `dest = a + b` (elementwise)
+- Requires `a.shape == b.shape == dest.shape`
+- Prints error and returns on shape mismatch
 
-## Initialization
+### `void mat_sub(Matrix *dest, const Matrix *a, const Matrix *b)`
 
-### `mat_fill`
-Sets every element of the matrix to the given constant value.
+- `dest = a - b` (elementwise)
+- Shape validation identical to `mat_add`
 
-### `mat_fill_rand`
-Fills the matrix with random values drawn from a normal distribution, scaled by the given factor.
-Intended for weight initialization (Xavier / He init).
+### `void mat_mul(Matrix *dest, const Matrix *a, const Matrix *b)`
 
----
+- Matrix multiplication: `dest[row,col] += a[row,i] * b[i,col]`
+- Requires `dest.shape = (a.rows, b.cols)`, `a.cols == b.rows`
+- Cache-friendly ijk loop order
 
-## Arithmetic
+### `void mat_mul_transpose(Matrix *dest, Matrix *a, Matrix *b, b32 a_transp, b32 b_transp)`
 
-All arithmetic functions write their result into a pre-allocated `dest` matrix. The caller is
-responsible for ensuring `dest` has the correct dimensions. This avoids hidden arena allocations
-inside hot paths like the training loop.
+- General matmul with optional transposes: `dest = a^T · b` or `a · b^T` or `a^T · b^T`
+- Computes dimensions dynamically, fills `dest` with zeros first
+- Full generality for backprop (grad × activation^T)
 
-### `mat_add`
-Elementwise addition of `a` and `b`, written into `dest`. All three matrices must have identical
-dimensions.
+### `void mat_scale(Matrix *dest, const Matrix *a, const f64 scalar)`
 
-### `mat_sub`
-Elementwise subtraction (`a - b`), written into `dest`. All three matrices must have identical
-dimensions.
+- `dest = a * scalar` (elementwise)
+- In-place scalar multiplication
 
-### `mat_scale`
-Multiplies every element of `a` by the scalar value, written into `dest`.
+### `void mat_add_vec(Matrix *dest, const Matrix *a, const Matrix *bias)`
 
-### `mat_add_vec`
-Broadcasts a bias row-vector across every row of `a` and writes the result into `dest`. Used to
-add a bias term after a linear layer.
-
-### `mat_mul`
-Matrix multiplication of `a` and `b` (`a.cols` must equal `b.rows`), written into `dest`.
-`dest` must be pre-allocated with dimensions `a.rows × b.cols`.
-
----
+- `dest = a + bias` broadcasting `bias[1 × cols]` across all rows
+- For layer bias addition: assumes `bias.shape = [1 × output_features]`
 
 ## Shape Operations
 
-### `mat_transpose`
-Returns a new matrix that is the transpose of `a`. Allocates the result on the provided arena.
-The original matrix is unmodified.
+### `Matrix *mat_transpose(Arena *arena, const Matrix *a)`
 
-### `mat_copy`
-Returns a deep copy of `a` allocated on the provided arena. The new matrix has its own
-independent `data` buffer.
+- Allocates new `[cols × rows]` matrix with transposed data
+- Returns `NULL` on allocation failure
 
-### `mat_row`
-Returns a `1 × cols` view into row `r` of `a`. No allocation is performed — the returned
-matrix's `data` pointer points directly into the original matrix's memory. Do not use after
-the source matrix's arena has been cleared.
+### `Matrix *mat_copy(Arena *arena, const Matrix *a)`
 
----
+- Deep copies matrix data to new arena allocation
+- Identical shape
+
+### `Matrix mat_row(const Matrix *a, u64 const row)`
+
+- Returns row view: `{rows=1, cols=a.cols, data=&a.data[row*a.cols]}`
+- **No allocation** — lightweight view for reductions
 
 ## Activation Functions
 
-All activation functions write elementwise results into a pre-allocated `dest` matrix.
+### `void mat_relu(Matrix *dest, const Matrix *a)`
 
-### `mat_relu`
-Applies ReLU elementwise: `max(0, x)` for each element of `a`, written into `dest`.
+- `dest = max(0, a)` elementwise
+- In-place capable
 
-### `mat_relu_backward`
-Computes the ReLU gradient: `gradient * (forward > 0)` elementwise, written into `dest`.
-`forward` is the pre-activation values from the forward pass.
+### `void mat_relu_backward(Matrix *dest, const Matrix *grad, const Matrix *forward)`
 
-### `mat_softmax`
-Applies softmax row-wise across `a`, written into `dest`. Used on the output layer to produce
-a probability distribution over classes.
+- `dest = grad * (forward > 0)` (ReLU derivative)
+- Requires `grad.shape == forward.shape`
 
----
+### `void mat_softmax(Matrix *dest, const Matrix *a)`
 
-## Loss
+- Row-wise softmax with numerical stability:
+  1. Find row max
+  2. `exp(x_i - max)`
+  3. Normalize by sum
+- Assumes `dest` same shape as `a`
 
-### `mat_cross_entropy`
-Computes the mean cross-entropy loss over a batch. Takes a matrix of predicted probabilities
-(one row per sample), a label array of true class indices, and the number of samples. Returns
-a single scalar loss value.
+## One-Hot & Loss Helpers
 
-### `mat_softmax_grad`
-Computes the combined gradient of the softmax + cross-entropy loss in a single pass, written
-into `dest`. This is significantly simpler and more numerically stable than computing the two
-gradients separately. `probs` is the softmax output from the forward pass.
+### `Matrix *mat_one_hot(Arena *arena, const u8 *labels, const u64 n, const u64 num_classes)`
 
----
+- Creates `[n × num_classes]` one-hot matrix from label indices
+- `one_hot[i, labels[i]] = 1.0`
 
-## Debug
+### `f64 mat_cross_entropy(Arena *arena, const Matrix *probs, const u8 *labels)`
 
-### `mat_print`
-Prints the full contents of the matrix to stdout with a label. Intended for debugging small
-matrices — do not use on large matrices during training.
+- `-mean(sum(one_hot × log(probs)))` over batch
+- Uses temp arena for one-hot conversion
+- **Monitoring only** (not for gradients)
 
-### `mat_shape`
-Prints just the matrix name and its dimensions in the format `name: (rows x cols)`. Useful for
-quickly verifying shapes during development.
+### `void mat_softmax_grad(Arena *arena, Matrix *dest, const Matrix *probs, const u8 *labels)`
 
+- Combined softmax+xentropy backward: `dest = (probs - one_hot) / batch_size`
+- **Key optimization**: no explicit jacobian computation
+- Temp arena for one-hot
+
+## Debug & Inspection
+
+### `void mat_print(Matrix *a, const char *name)`
+
+- Pretty-prints matrix with shape preview
+- Truncates large matrices (`>6×6`) with `...` ellipses
+- Compact format: `%9.5f`
+
+### `void mat_shape(Matrix *a)`
+
+- Prints `(rows, cols)` tuple
+
+## Key Design Decisions
+
+- **Arena-only**: No manual freeing, tied to arena lifetime
+- **In-place preferred**: Saves allocations during training loops
+- **Shape validation**: Defensive error printing (no crashes)
+- **Broadcasting**: `mat_add_vec` for efficient bias addition
+- **Numerical stability**: Softmax max-subtraction, future log-sum-exp for loss
+- **Backprop-ready**: Transpose mul, activation derivatives
+
+## Usage Constraints
+
+- All matrices row-major: `[batch × features]`
+- No ownership transfer: caller manages arena lifetimes
+- Error handling via stderr (extend with callbacks later)
+- Single-threaded (add OpenMP pragmas for speed)
+
+## Performance Notes
+
+- Cache-friendly matmul (i outer, j middle, k inner)
+- Minimal allocations (views where possible)
+- No temporaries in core hot loops
+
+# NN Library Function Specifications
+
+## Config Functions
+
+### `NNConfig *NN_init_config(Arena *arena, u64 hidden_size, u64 batch_size, u64 epochs, b32 has_hidden)`
+
+- Allocates and initializes `NNConfig` struct on given arena
+- Sets all fields: `hidden_size`, `lr` (default 0.01), `batch_size`, `epochs`, `has_hidden`
+- Returns pointer to allocated config or `NULL` on failure
+- Makes config immutable after creation
+
+## Model Functions
+
+### `NNModel *NN_init_model(Arena *arena, NNConfig *config)`
+
+- Creates `NNModel` with **two layers** when `has_hidden=true`:
+  - `layer_1`: hidden layer `[hidden_size × 784]` weights, `[hidden_size × 1]` bias (ReLU activation)
+  - `layer_2`: output layer `[10 × hidden_size]` weights, `[10 × 1]` bias (Softmax)
+- Single layer mode (`has_hidden=false`): `layer_1` as `[10 × 784]` direct to output
+- Initializes weights randomly (Xavier/Glorot), biases to zero
+- Returns allocated model or `NULL` on allocation failure
+
+## Forward Pass
+
+### `void NN_forward(NNModel *model, Matrix *input, Matrix *output, NNCache *cache)`
+
+- **Two-layer forward** (`has_hidden=true`):
+  1. `Z1 = layer_1.W · input + layer_1.b`
+  2. `A1 = ReLU(Z1)` 
+  3. `Z2 = layer_2.W · A1 + layer_2.b`
+  4. `A2 = softmax(Z2)` → output
+- **Single-layer** (`has_hidden=false`): `Z1 = layer_1.W · input + layer_1.b`, `A1 = softmax(Z1)`
+- Stores all intermediates (`Z1,A1,Z2,A2`) in cache for backprop
+- Input shape: `[784 × batch_size]`, Output: `[10 × batch_size]`
+- Overwrites output matrix in-place
+
+## Training Functions
+
+### `void NN_backward(NNModel *model, Matrix *input, Matrix *target, NNCache *cache, NNGrads *grads)`
+
+- **Two-layer backprop** (`has_hidden=true`):
+  1. `dZ2 = A2 - target` (softmax+xentropy)
+  2. `dW2 = (1/batch) · dZ2 · A1^T`, `db2 = mean(dZ2)`
+  3. `dA1 = layer_2.W^T · dZ2`
+  4. `dZ1 = dA1 ⊙ ReLU'(A1)`
+  5. `dW1 = (1/batch) · dZ1 · input^T`, `db1 = mean(dZ1)`
+- **Single-layer**: `dw1 = A1 - target`, `db1 = mean(dw1)`
+- Stores all gradients (`dw1,db1,dw2,db2`) in grads struct
+
+### `void NN_update(NNModel *model, NNGrads *grads, f64 lr)`
+
+- Gradient descent: `W1 -= lr · dw1`, `b1 -= lr · db1`, same for layer 2
+- In-place weight modification
+- Optional gradient clipping (future)
+
+## Cache & Grad Management
+
+### `NNCache *NN_init_cache(Arena *arena, NNConfig *config)`
+
+- Allocates cache matrices matching model:
+  - Single layer: `Z1[10×batch], A1[10×batch]`
+  - Two layers: `Z1[hidden×batch], A1[hidden×batch], Z2[10×batch], A2[10×batch]`
+- Reused across forward/backward calls
+
+### `NNGrads *NN_init_grads(Arena *arena, NNConfig *config)`
+
+- Allocates gradient matrices matching model dimensions:
+  - Single: `dw1[10×784], db1[10×1]`
+  - Two layers: `dw1[hidden×784], db1[hidden×1], dw2[10×hidden], db2[10×1]`
+
+## Training Loop Helper
+
+### `f64 NN_train_step(NNModel *model, Matrix *batch_X, Matrix *batch_y, NNCache *cache, NNGrads *grads, f64 lr)`
+
+- Single call: forward → backward → update
+- Returns cross-entropy loss: `-mean(sum(target · log(preds)))`
+- Validates matrix shapes, handles both single/two-layer modes
+
+## Utility Functions
+
+### `f64 NN_cross_entropy_loss(Matrix *predictions, Matrix *targets)`
+
+- Average cross-entropy loss with log-sum-exp stability
+- Expects softmax outputs, one-hot targets
+
+### `f64 NN_accuracy(Matrix *predictions, Matrix *targets)`
+
+- Classification accuracy: `mean(argmax(preds) == argmax(targets))`
+- Batch-compatible
